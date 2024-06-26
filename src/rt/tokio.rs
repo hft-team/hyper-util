@@ -49,7 +49,7 @@ where
     Fut::Output: Send + 'static,
 {
     fn execute(&self, fut: Fut) {
-        tokio::spawn(fut);
+        tokio::task::spawn_local(fut);
     }
 }
 
