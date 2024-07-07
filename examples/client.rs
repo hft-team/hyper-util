@@ -4,34 +4,37 @@ use http_body_util::Empty;
 use hyper::Request;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let url = match env::args().nth(1) {
-        Some(url) => url,
-        None => {
-            eprintln!("Usage: client <url>");
-            return Ok(());
-        }
-    };
+fn main() {
+    let args: Vec<String> = env::args().collect();
 
-    // HTTPS requires picking a TLS implementation, so give a better
-    // warning if the user tries to request an 'https' URL.
-    let url = url.parse::<hyper::Uri>()?;
+    tokio::fstack_init(args.len(), args);
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+
+    let url = String::from("http://httpbin.org/ip");
+    let url = url.parse::<hyper::Uri>().expect("failed to parse URL");
     if url.scheme_str() != Some("http") {
         eprintln!("This example only works with 'http' URLs.");
-        return Ok(());
     }
 
     let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(HttpConnector::new());
 
     let req = Request::builder()
         .uri(url)
-        .body(Empty::<bytes::Bytes>::new())?;
+        .body(Empty::<bytes::Bytes>::new())
+        .expect("failed to build request");
 
-    let resp = client.request(req).await?;
 
-    eprintln!("{:?} {:?}", resp.version(), resp.status());
-    eprintln!("{:#?}", resp.headers());
-
-    Ok(())
+    rt.block_on(async {
+        let local = tokio::task::LocalSet::new();
+        local.run_until(async move {
+            let resp = client.request(req).await.expect("failed to fetch URL");
+            eprintln!("{:?} {:?}", resp.version(), resp.status());
+            eprintln!("{:#?}", resp.headers());
+        }).await;
+    });
 }
