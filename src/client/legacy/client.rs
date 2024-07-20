@@ -1457,6 +1457,7 @@ impl Builder {
     /// details.
     ///
     /// [`h2::client::Builder::timer`]: https://docs.rs/h2/client/struct.Builder.html#method.timer
+    #[allow(unused_variables)]
     pub fn timer<M>(&mut self, timer: M) -> &mut Self
     where
         M: Timer + Send + Sync + 'static,

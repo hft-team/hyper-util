@@ -1,5 +1,5 @@
 use std::env;
-
+use std::net::SocketAddr;
 use http_body_util::Empty;
 use hyper::Request;
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
@@ -15,13 +15,21 @@ fn main() {
         .unwrap();
 
 
-    let url = String::from("http://httpbin.org/ip");
+    let url = String::from("http://ifconfig.me/ip");
     let url = url.parse::<hyper::Uri>().expect("failed to parse URL");
     if url.scheme_str() != Some("http") {
         eprintln!("This example only works with 'http' URLs.");
     }
+    let local_ip = String::from("192.168.8.107:0");
+    let local_addr: SocketAddr = local_ip.parse().unwrap();
 
-    let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(HttpConnector::new());
+    // let connector = HttpConnector::new();
+    let mut connector = HttpConnector::new();
+    // connector.set_interface() // bind to device
+    connector.set_local_address(Some(local_addr.ip())); // bind to address
+    // connector.set_local_addresses() // bind to ipv4 and ipv6 addresses
+
+    let client = Client::builder(hyper_util::rt::TokioExecutor::new()).build(connector);
 
     let req = Request::builder()
         .uri(url)

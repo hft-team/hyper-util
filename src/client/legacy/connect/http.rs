@@ -1,3 +1,4 @@
+extern crate fstack_mio as mio;
 use std::error::Error as StdError;
 use std::fmt;
 use std::future::Future;
@@ -88,6 +89,7 @@ struct TcpKeepaliveConfig {
 
 impl TcpKeepaliveConfig {
     /// Converts into a `socket2::TcpKeealive` if there is any keep alive configuration.
+    #[allow(dead_code)]
     fn into_tcpkeepalive(self) -> Option<TcpKeepalive> {
         let mut dirty = false;
         let mut ka = TcpKeepalive::new();
@@ -663,6 +665,7 @@ impl ConnectingTcpRemote {
     }
 }
 
+#[allow(dead_code)]
 fn bind_local_address(
     socket: &socket2::Socket,
     dst_addr: &SocketAddr,
@@ -691,98 +694,35 @@ fn bind_local_address(
     Ok(())
 }
 
+#[allow(unused_variables)]
 fn connect(
     addr: &SocketAddr,
     config: &Config,
     connect_timeout: Option<Duration>,
 ) -> Result<impl Future<Output=Result<TcpStream, ConnectError>>, ConnectError> {
-    // TODO(eliza): if Tokio's `TcpSocket` gains support for setting the
-    // keepalive timeout, it would be nice to use that instead of socket2,
-    // and avoid the unsafe `into_raw_fd`/`from_raw_fd` dance...
-    // use socket2::{Domain, Protocol, Socket, Type};
-    //
-    // let domain = Domain::for_address(*addr);
-    // let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))
-    //     .map_err(ConnectError::m("tcp open error"))?;
-    //
-    // // When constructing a Tokio `TcpSocket` from a raw fd/socket, the user is
-    // // responsible for ensuring O_NONBLOCK is set.
-    // socket
-    //     .set_nonblocking(true)
-    //     .map_err(ConnectError::m("tcp set_nonblocking error"))?;
-    //
-    // if let Some(tcp_keepalive) = &config.tcp_keepalive_config.into_tcpkeepalive() {
-    //     if let Err(e) = socket.set_tcp_keepalive(tcp_keepalive) {
-    //         warn!("tcp set_keepalive error: {}", e);
-    //     }
-    // }
-    //
-    // #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]
-    // // That this only works for some socket types, particularly AF_INET sockets.
-    // if let Some(interface) = &config.interface {
-    //     socket
-    //         .bind_device(Some(interface.as_bytes()))
-    //         .map_err(ConnectError::m("tcp bind interface error"))?;
-    // }
-    //
-    // bind_local_address(
-    //     &socket,
-    //     addr,
-    //     &config.local_address_ipv4,
-    //     &config.local_address_ipv6,
-    // )
-    // .map_err(ConnectError::m("tcp bind local error"))?;
-    //
-    // #[cfg(unix)]
-    // let socket = unsafe {
-    //     // Safety: `from_raw_fd` is only safe to call if ownership of the raw
-    //     // file descriptor is transferred. Since we call `into_raw_fd` on the
-    //     // socket2 socket, it gives up ownership of the fd and will not close
-    //     // it, so this is safe.
-    //     use std::os::unix::io::{FromRawFd, IntoRawFd};
-    //     TcpSocket::from_raw_fd(socket.into_raw_fd())
-    // };
-    // #[cfg(windows)]
-    // let socket = unsafe {
-    //     // Safety: `from_raw_socket` is only safe to call if ownership of the raw
-    //     // Windows SOCKET is transferred. Since we call `into_raw_socket` on the
-    //     // socket2 socket, it gives up ownership of the SOCKET and will not close
-    //     // it, so this is safe.
-    //     use std::os::windows::io::{FromRawSocket, IntoRawSocket};
-    //     TcpSocket::from_raw_socket(socket.into_raw_socket())
-    // };
-    //
-    // if config.reuse_address {
-    //     if let Err(e) = socket.set_reuseaddr(true) {
-    //         warn!("tcp set_reuse_address error: {}", e);
-    //     }
-    // }
-    //
-    // if let Some(size) = config.send_buffer_size {
-    //     if let Err(e) = socket.set_send_buffer_size(size.try_into().unwrap_or(u32::MAX)) {
-    //         warn!("tcp set_buffer_size error: {}", e);
-    //     }
-    // }
-    //
-    // if let Some(size) = config.recv_buffer_size {
-    //     if let Err(e) = socket.set_recv_buffer_size(size.try_into().unwrap_or(u32::MAX)) {
-    //         warn!("tcp set_recv_buffer_size error: {}", e);
-    //     }
-    // }
-    //
-    // let connect = socket.connect(*addr);
+    use mio::sys::unix::fd::Socket;
+    let socket = Socket::new(addr, 1)
+        .map_err(ConnectError::m("socket creation failed"))?;
+    match config.local_address_ipv4 {
+        Some(ipv4) => {
+            socket.bind_local_address(Some(SocketAddr::new(IpAddr::from(ipv4), 0)), None)
+                .map_err(ConnectError::m("tcp bind local error"))?;
+        }
+        None => {}
+    }
 
-    let connect = TcpStream::connect(*addr);
+    match config.local_address_ipv6 {
+        Some(ipv6) => {
+            socket.bind_local_address(Some(SocketAddr::new(IpAddr::from(ipv6), 0)), None)
+                .map_err(ConnectError::m("tcp bind local error"))?;
+        }
+        None => {}
+    }
+
+    let connect = mio::sys::TcpStream::connect_from_socket(socket, addr.clone()).map_err(ConnectError::m("connect_from_socket tcp connect error"))?;
 
     Ok(async move {
-        match connect_timeout {
-            Some(dur) => match tokio::time::timeout(dur, connect).await {
-                Ok(Ok(s)) => Ok(s),
-                Ok(Err(e)) => Err(e),
-                Err(e) => Err(io::Error::new(io::ErrorKind::TimedOut, e)),
-            },
-            None => connect.await,
-        }
+        TcpStream::from_std(connect)
             .map_err(ConnectError::m("tcp connect error"))
     })
 }

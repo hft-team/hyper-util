@@ -20,6 +20,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 #hyper = "1.3.0"
 hyper = { git = "https://github.com/hft-team/hyper-dpdk.git", branch = "dpdk" }
+fstack-mio = { git = "https://github.com/hft-team/fstack-mio.git", branch = "master" }
 
 futures-util = { version = "0.3.16", default-features = false }
 http = "1.0"
